@@ -17,7 +17,7 @@ data in;
 	datalines;
 19 age19
 28 age28
-40 age40
+
 ;
 ods graphics on;
 proc phreg data=surv_dat plots(overlay)=survival;
