@@ -4,7 +4,10 @@ DM "log; clear; ";
 dm 'odsresults; clear';
 libname dbo ODBC DSN=SFCC_DW UID=SFCC_DW_IR PWD=R3ad_0n!y  SCHEMA=DBO;
 
+				/****** current courses failed *******/
+*generates sids, count and lsit of current courses failed by deegree seeking students;
 
+*generate sids;
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE fa14_degree_sids AS                                                                                                                                      
                                                                                                                                                                             
@@ -42,7 +45,7 @@ ORDER BY Student_ID;
 QUIT;*12694;
 
 
-
+*get courses;
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE courses_failed AS                                                                                                                                      
                                                                                                                                                                             
@@ -83,10 +86,12 @@ PROC EXPORT DATA=courses_failed
 RUN;
 
 
-/*************** end of origianl query **************/
+/*************** end of original query **************/
 
 
-/************ course failure comninations in term ************/
+			/************ course failure combinations in term ************/
+
+*generates market basket for courses failed in one term;
 
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE failed_course_combos_interm AS                                                                                                                                      
@@ -213,10 +218,11 @@ PROC EXPORT DATA=fail_course_combos_dat
 RUN;
 
 
-/**************************************************************/ 
+/**********************end of courses failed in term ****************************/ 
 
-/*********** course combinations in term **********/
+		/*********** course combinations in term **********/
 
+*generates market basket of courses taken in term;
 
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE course_combos AS                                                                                                                                      
@@ -344,6 +350,151 @@ PROC EXPORT DATA=course_combos_dat
     DBMS=EXCEL2010 REPLACE;
    	SHEET="sheet1";
 RUN;
+
+
+/**************  end of courses taken in term market basket***************/
+
+		/*********** course combinations market basket through time **********/
+*geenrates market basket of courses taken in two subsequent terms;
+
+
+*uses previous run file ... course_combos_dat;
+
+*selects students who attended fa12 and generates sids for sp15;
+Proc SQL;                                                                                                                                                                    
+      CREATE TABLE courses_2 AS                                                                                                                                      
+                                                                                                                                                                            
+     	SELECT DISTINCT 
+				t2.Student_ID,
+				t1.Term_Year,
+				t1.Term_Name,
+				t2.Course,
+				t3.Course_Grade_SCH
+
+		FROM dbo.Daily_Term_Summary AS t1 
+
+				INNER JOIN dbo.Daily_Student_Course_Snapshot AS t2 
+					ON t1.Run_Date = t2.Run_Date 
+						AND t1.Term_Year = t2.Term_Year 
+						AND t1.Term_Number = t2.Term_Number 
+
+				INNER JOIN dbo.Daily_Student_Info_Snapshot AS t4
+					ON t2.Run_Date = t4.Run_Date 
+						AND t2.Student_ID = t4.Student_ID 
+
+				LEFT OUTER JOIN dbo.Student_Course_History AS t3 
+					ON t2.Term_Year = t3.Term_Year 
+						AND t2.Term_Number = t3.Term_Number 
+						AND t2.Student_ID = t3.Student_ID 
+						AND t2.Course = t3.original_course_sch /*... ITS update as of 9/26/2013 This was t3.course*/
+						AND t2.Course_Section = t3.Course_Section
+
+
+		WHERE (t3.Institution_FICE_Code_SCH = '0001519') 
+			AND (t2.Enrollment_Status_Code <> 'D') 
+			AND (t3.Enrollment_Status_Code_SCH <> 'D') 
+			AND (t1.Term_Year ='2015' and t1.Term_Name = 'Spring')
+			and t2.Student_ID in (select Student_ID from course1)
+		
+		
+
+ORDER BY Student_ID;
+QUIT;*32702;
+
+
+data next_course1;
+set courses_2;
+format next_course1 $10.;
+next_course1 = Course;
+by Student_ID;
+if First.Student_ID then output;
+keep student_ID next_course1;
+run; *1350;
+
+data courses2;
+set courses_2;
+by Student_ID;
+if First.Student_ID then delete;
+run; 
+
+
+data next_course2;
+set courses2;
+format next_course2 $10.;
+next_course2 = Course;
+by Student_ID;
+if First.Student_ID then output;
+keep student_ID next_course2;
+run; *816;
+
+
+data courses3;
+set courses2;
+by Student_ID;
+if First.Student_ID then delete;
+run; 
+
+
+data next_course3;
+set courses3;
+format next_course3 $10.;
+next_course3 = Course;
+by Student_ID;
+if First.Student_ID then output;
+keep student_ID next_course3;
+run; *363;
+
+
+data courses4;
+set courses3;
+by Student_ID;
+if First.Student_ID then delete;
+run; 
+
+data next_course4;
+set courses4;
+format next_course4 $10.;
+next_course4 = Course;
+by Student_ID;
+if First.Student_ID then output;
+keep student_ID next_course4;
+run; *139;
+
+
+data courses5;
+set courses4;
+by Student_ID;
+if First.Student_ID then delete;
+run; 
+
+data next_course5;
+set courses5;
+format next_course5 $10.;
+next_course5 = Course;
+by Student_ID;
+if First.Student_ID then output;
+keep student_ID next_course5;
+run; *25;
+
+data courses_sub_squared_dat;
+merge course1 course2 course3 course4 course5 next_course1 next_course2 next_course3 next_course4 next_course5;
+by Student_ID;
+drop course;
+run;
+
+
+
+PROC EXPORT DATA=courses_sub_squared_dat
+    OUTFILE="S:\Reports\common\Data Request\Programs\William\data mining\subsequent_course_combos\courses_sub_squared_dat.xlsx"
+    DBMS=EXCEL2010 REPLACE;
+RUN;
+
+/************ end of courses through time ************/
+
+
+
+		/***************  specific combos in semester *****************/
+*looks at tagret courses for study;
 
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE mat_psy_enc_combos AS                                                                                                                                      
@@ -598,8 +749,12 @@ merge fails1 fails2;
 by student_ID;
 run;
 
+/****************  end of target course study ****************/
 
-/******************** failures through time ****************/
+
+				/******************** courses failures through time ****************/
+
+*generates market basket of failures in subsequent semesters;
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE fa14_failed_courses AS                                                                                                                                      
                                                                                                                                                                             
@@ -787,7 +942,7 @@ if First.Student_ID then output;
 keep student_ID course5;
 run; *68;
 
-/*******************/
+*generates courses failed in following sp15;
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE failed_courses_2 AS                                                                                                                                      
                                                                                                                                                                             
@@ -828,6 +983,8 @@ Proc SQL;
 
 ORDER BY Student_ID;
 QUIT;*43202;
+
+
 data next_course1;
 set failed_courses_2;
 format next_course1 $10.;
@@ -902,7 +1059,7 @@ if First.Student_ID then output;
 keep student_ID next_course5;
 run; *25;
 
-
+*generates courses in follwing summer and fall;
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE failed_courses_3 AS                                                                                                                                      
                                                                                                                                                                             
@@ -1059,9 +1216,9 @@ PROC EXPORT DATA=failed_sub_squared_dat
     DBMS=EXCEL2010 REPLACE;
 RUN;
 
-/********************************************************/
+/************* end of failed courses through time ******************/
 
-/*mat1033 and enc1101 study*/
+/*mat1033 and enc1101 study using FTIC students */
 
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE fa14_FTIC_sids AS                                                                                                                                      
@@ -1336,12 +1493,6 @@ set fa14_math_courses;
 if Course_Grade_SCH in ('D+', 'D', 'F');
 run;
 
-/*
-data fa14_combos;
-set fa14_courses;
-if Course = 'MAT1033' and Course = 'ENC1101' then output;;
-run;
-*/
 
 proc sql;
 	create table fa14_math_fail_counts as
@@ -1430,12 +1581,6 @@ set fa14_enc_courses;
 if Course_Grade_SCH in ('D+', 'D', 'F');
 run;
 
-/*
-data fa14_combos;
-set fa14_courses;
-if Course = 'MAT1033' and Course = 'ENC1101' then output;;
-run;
-*/
 
 proc sql;
 	create table fa14_enc_fail_counts as
@@ -1525,12 +1670,7 @@ set fa14_both_courses;
 if Course_Grade_SCH in ('D+', 'D', 'F');
 run;
 
-/*
-data fa14_combos;
-set fa14_courses;
-if Course = 'MAT1033' and Course = 'ENC1101' then output;;
-run;
-*/
+
 
 proc sql;
 	create table fa14_both_fail_counts as
@@ -1601,7 +1741,7 @@ PROC EXPORT DATA=fa14_enc_outcome3
    	SHEET="sheet1";
 RUN;
 
-/**** all FTICr *****/
+/**** all FTIC *****/
 
 Proc SQL;                                                                                                                                                                    
       CREATE TABLE fa14_FTIC_courses AS                                                                                                                                      
@@ -1652,12 +1792,6 @@ set fa14_FTIC_courses;
 if Course_Grade_SCH in ('D+', 'D', 'F');
 run;
 
-/*
-data fa14_combos;
-set fa14_courses;
-if Course = 'MAT1033' and Course = 'ENC1101' then output;;
-run;
-*/
 
 proc sql;
 	create table fa14_FTIC_fail_counts as
@@ -1702,3 +1836,131 @@ PROC EXPORT DATA=fa14_FTIC_outcome3
     DBMS=EXCEL2010 REPLACE;
    	SHEET="sheet1";
 RUN;
+
+
+/****************** enc1101 then hum2450 ******************/
+*looks at which is better take enc1101 and hum2450 together or subsequent;
+
+Proc SQL;                                                                                                                                                                    
+      CREATE TABLE fa14_enc1101_pass AS                                                                                                                                      
+                                                                                                                                                                            
+     	SELECT DISTINCT 
+				t2.Student_ID,
+				t3.Course,
+				t3.Course_Grade_SCH
+
+		FROM dbo.Daily_Term_Summary AS t1 
+
+				INNER JOIN dbo.Daily_Student_Course_Snapshot AS t2 
+					ON t1.Run_Date = t2.Run_Date 
+						AND t1.Term_Year = t2.Term_Year 
+						AND t1.Term_Number = t2.Term_Number 
+
+				INNER JOIN dbo.Daily_Student_Info_Snapshot AS t4
+					ON t2.Run_Date = t4.Run_Date 
+						AND t2.Student_ID = t4.Student_ID 
+
+				LEFT OUTER JOIN dbo.Student_Course_History AS t3 
+					ON t2.Term_Year = t3.Term_Year 
+						AND t2.Term_Number = t3.Term_Number 
+						AND t2.Student_ID = t3.Student_ID 
+						AND t2.Course = t3.original_course_sch /*... ITS update as of 9/26/2013 This was t3.course*/
+						AND t2.Course_Section = t3.Course_Section
+
+
+		WHERE (t1.Most_Recent_For_Term_Flag = 'H') 
+			AND (t3.Institution_FICE_Code_SCH = '0001519') 
+			AND (t2.Enrollment_Status_Code <> 'D') 
+			AND (t3.Enrollment_Status_Code_SCH <> 'D') 
+			AND (t1.Term_Year = '2014' )
+			AND (t1.Term_Name = 'Fall')
+			AND t4.Degree IN ('AA', 'AS', 'AAS')
+			and t3.Course in ('enc1101')
+			and t3.Course_Grade_SCH in ('A+', 'A', 'B+', 'B', 'C+', 'C')
+		
+		
+
+ORDER BY Student_ID;
+QUIT;*1425;
+
+Proc SQL;                                                                                                                                                                    
+      CREATE TABLE sp15_HUM2450 AS                                                                                                                                      
+                                                                                                                                                                            
+     	SELECT DISTINCT 
+				t2.Student_ID,
+				t3.Course,
+				t3.Course_Grade_SCH
+
+		FROM dbo.Daily_Term_Summary AS t1 
+
+				INNER JOIN dbo.Daily_Student_Course_Snapshot AS t2 
+					ON t1.Run_Date = t2.Run_Date 
+						AND t1.Term_Year = t2.Term_Year 
+						AND t1.Term_Number = t2.Term_Number 
+
+				INNER JOIN dbo.Daily_Student_Info_Snapshot AS t4
+					ON t2.Run_Date = t4.Run_Date 
+						AND t2.Student_ID = t4.Student_ID 
+
+				LEFT OUTER JOIN dbo.Student_Course_History AS t3 
+					ON t2.Term_Year = t3.Term_Year 
+						AND t2.Term_Number = t3.Term_Number 
+						AND t2.Student_ID = t3.Student_ID 
+						AND t2.Course = t3.original_course_sch /*... ITS update as of 9/26/2013 This was t3.course*/
+						AND t2.Course_Section = t3.Course_Section
+
+
+		WHERE (t1.Most_Recent_For_Term_Flag = 'H') 
+			AND (t3.Institution_FICE_Code_SCH = '0001519') 
+			AND (t2.Enrollment_Status_Code <> 'D') 
+			AND (t3.Enrollment_Status_Code_SCH <> 'D') 
+			AND (t1.Term_Year = '2015' )
+			AND (t1.Term_Name = 'Spring')
+			AND t4.Degree IN ('AA', 'AS', 'AAS')
+			and t3.Course in ('HUM2450')
+			and t2.Student_ID in (select Student_ID from fa14_enc1101_pass)	
+
+ORDER BY Student_ID;
+QUIT;*25;*4 out of 23 wo W's 17.4%;
+
+Proc SQL;                                                                                                                                                                    
+      CREATE TABLE fa14_HUM2450 AS                                                                                                                                      
+                                                                                                                                                                            
+     	SELECT DISTINCT 
+				t2.Student_ID,
+				t3.Course,
+				t3.Course_Grade_SCH
+
+		FROM dbo.Daily_Term_Summary AS t1 
+
+				INNER JOIN dbo.Daily_Student_Course_Snapshot AS t2 
+					ON t1.Run_Date = t2.Run_Date 
+						AND t1.Term_Year = t2.Term_Year 
+						AND t1.Term_Number = t2.Term_Number 
+
+				INNER JOIN dbo.Daily_Student_Info_Snapshot AS t4
+					ON t2.Run_Date = t4.Run_Date 
+						AND t2.Student_ID = t4.Student_ID 
+
+				LEFT OUTER JOIN dbo.Student_Course_History AS t3 
+					ON t2.Term_Year = t3.Term_Year 
+						AND t2.Term_Number = t3.Term_Number 
+						AND t2.Student_ID = t3.Student_ID 
+						AND t2.Course = t3.original_course_sch /*... ITS update as of 9/26/2013 This was t3.course*/
+						AND t2.Course_Section = t3.Course_Section
+
+
+		WHERE (t1.Most_Recent_For_Term_Flag = 'H') 
+			AND (t3.Institution_FICE_Code_SCH = '0001519') 
+			AND (t2.Enrollment_Status_Code <> 'D') 
+			AND (t3.Enrollment_Status_Code_SCH <> 'D') 
+			AND (t1.Term_Year = '2014' )
+			AND (t1.Term_Name = 'Fall')
+			AND t4.Degree IN ('AA', 'AS', 'AAS')
+			and t3.Course in ('HUM2450')
+			and t2.Student_ID in (select Student_ID from fa14_enc1101_pass)	
+
+ORDER BY Student_ID;
+QUIT;*26 passed enc1101;*2 out of 26 wo W's 7.7%;
+
+
